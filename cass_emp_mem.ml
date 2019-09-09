@@ -1,3 +1,5 @@
+(* only set in ao *) 
+
 #require "lwt.unix";;
 #require "irmin";;
 #require "irmin-mem";;
@@ -17,7 +19,49 @@ let key = Lwt_main.run  (Store_module.add hashtable "emp3") ;;
 
 let aw_t = Lwt_main.run @@ RW_module.v config ;;
 
-let _ = RW_module.set aw_t "branch2" key ;;
+let _ = RW_module.set aw_t "master" key ;;
+
+
+(*-----------------------------------------------------------*)
+(* only find in rw *)
+
+#require "lwt.unix";;
+#require "irmin";;
+#require "irmin-mem";;
+
+
+open Lwt_main;;
+open Irmin;;
+open Irmin_mem;;
+
+module RW_module = Irmin_mem.RW (Irmin.Contents.String) (Irmin.Hash.SHA1);;
+let config = Irmin_mem.config () ;;
+let aw_t = Lwt_main.run @@ RW_module.v config ;;
+let _ = RW_module.find aw_t "master";;
+
+(*-----------------------------------------------------------*)
+(* test_and_set in rw which involves set in ao and find in rw *)
+
+#require "lwt.unix";;
+#require "irmin";;
+#require "irmin-mem";;
+
+
+open Lwt_main;;
+open Irmin;;
+open Irmin_mem;;
+
+module Store_module = Irmin_mem.AO (Irmin.Hash.SHA1) (Irmin.Contents.String);;
+module RW_module = Irmin_mem.RW (Irmin.Contents.String) (Irmin.Hash.SHA1);;
+
+let config = Irmin_mem.config () ;;
+let hashtable = Lwt_main.run @@ Store_module.v config ;;
+let key1 = Lwt_main.run  (Store_module.add hashtable "emp1") ;;
+let aw_t = Lwt_main.run @@ RW_module.v config ;;
+let _ = RW_module.set aw_t "master" key1 ;;
+
+RW_module.test_and_set aw_t "master" ~test:(Some key1) ~set:(Some key1);;
+
 
 
 (* let cstruct = Irmin.Hash.SHA1.to_raw key ;; *)
@@ -54,4 +98,4 @@ let cstruct = Irmin.Hash.SHA1.to_raw key in
 let str = Cstruct.to_string cstruct in 
 let key2 = String.sub str 8 ((String.length str) - 8) in
 
-let _ = RW_module.set aw_t "master" key2 in () *)
+let _ = RW_module.set aw_t "master" key2 in ()
