@@ -21,20 +21,17 @@
     shared hash-table: multiple invocation of [M.create] will see and
     manipulate the same contents. *)
 
-val config: unit -> Irmin.config
+val config : unit -> Irmin.config
 (** Configuration values. *)
 
-module AO: Irmin.AO_MAKER
-(** An in-memory append-only store. *)
+module Append_only : Irmin.APPEND_ONLY_STORE_MAKER
+(** An in-memory store for append-only values. *)
 
-module RW: Irmin.RW_MAKER
-(*An in-memory read-write store. *)
+module Atomic_write : Irmin.ATOMIC_WRITE_STORE_MAKER
+(** An in-memory store with atomic-write guarantees. *)
 
-(* module Link: Irmin.LINK_MAKER
-(** Immutable links. *)
-
-module Make: Irmin.S_MAKER
+module Make : Irmin.S_MAKER
 (** An in-memory Irmin store. *)
 
-module KV: Irmin.KV_MAKER *)
-(** An in-memory KV-store. *)
+module KV : Irmin.KV_MAKER
+(** An in-memory KV store. *)
