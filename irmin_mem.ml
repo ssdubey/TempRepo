@@ -19,13 +19,8 @@ open Lwt.Infix
 type cassSession
 type cassStatement
 type cassCluster
-type uuid
 type cassFuture  
 type cassError
-type cassUuid
-type cassUuidGen
-type stubtype
-type cassTuple
 type cassResult
 type cassRow
 type cassValue
@@ -45,9 +40,9 @@ external ml_cass_statement_new : string -> int -> cassStatement = "cass_statemen
 external ml_cass_session_execute : cassSession -> cassStatement -> cassFuture = "cass_session_execute"
 external ml_cass_future_free : cassFuture -> unit = "cass_future_free"
 external ml_cass_statement_free : cassStatement -> unit = "cass_statement_free"
-external ml_cass_uuid_gen_new : unit -> cassUuidGen = "cass_uuid_gen_new"
-external ml_cass_uuid_gen_free : cassUuidGen -> unit = "cass_uuid_gen_free"
-external ml_cass_statement_new : string -> int -> cassStatement = "cass_statement_new"
+(* external ml_cass_uuid_gen_new : unit -> cassUuidGen = "cass_uuid_gen_new" *)
+(* external ml_cass_uuid_gen_free : cassUuidGen -> unit = "cass_uuid_gen_free" *)
+(* external ml_cass_statement_new : string -> int -> cassStatement = "cass_statement_new" *)
 external ml_cass_statement_bind_string : cassStatement -> int -> string -> unit = 
                               "cass_statement_bind_string"
 external ml_cass_future_get_result : cassFuture -> cassResult = "cass_future_get_result"
@@ -56,18 +51,20 @@ external ml_cass_row_get_column : cassRow -> int -> cassValue = "cass_row_get_co
 external ml_cass_iterator_from_result : cassResult -> cassIterator = "cass_iterator_from_result"
 external ml_cass_result_row_count : cassResult -> int = "cass_result_row_count"
 external ml_cass_iterator_next : cassIterator -> bool = "cass_iterator_next"
-external ml_cass_value_get_string : cassValue -> string -> int -> unit = "cass_value_get_string"
+(* external ml_cass_value_get_string : cassValue -> string -> int -> unit = "cass_value_get_string" *)
 external ml_cass_iterator_get_row : cassIterator -> cassRow = "cass_iterator_get_row"
 external ml_cass_row_get_column_by_name : cassRow -> string -> cassValue = "cass_row_get_column_by_name"
-external ml_cass_iterator_from_tuple : cassValue -> cassIterator = "cass_iterator_from_tuple"
-external ml_cass_iterator_get_value : cassIterator -> cassValue = "cass_iterator_get_value"
+(* external ml_cass_iterator_from_tuple : cassValue -> cassIterator = "cass_iterator_from_tuple" *)
+(* external ml_cass_iterator_get_value : cassIterator -> cassValue = "cass_iterator_get_value" *)
 (* externa *)
+external ml_cass_session_close : cassSession -> cassFuture = "cass_session_close"
 
 external cstub_get_string : cassValue -> string = "get_string"
 external cstub_convert : int -> int = "convert"
 external cstub_match_enum : cassError -> cassFuture -> bool = "match_enum"
 external cstub_convert_to_bool : bool -> bool = "convert_to_bool"
 external cstub_convert_to_ml : int -> int = "convert_to_ml"
+(* external aw_find_c : cassSession -> string -> string = "c_fun" *)
 
 let get_error_code future statement = 
   let rc = ml_cass_future_error_code future in 
@@ -91,13 +88,13 @@ let connect_session sess cluster =
   let response = cstub_match_enum rc future in 
     response
 
-let execute_query sess query =
+(* let execute_query sess query =
   let v = cstub_convert 0 in 
   let statement = ml_cass_statement_new query v in
   let future = ml_cass_session_execute sess statement in
     ml_cass_future_wait future;
     
-    get_error_code future statement
+    get_error_code future statement *)
 
 
 let tns_stmt session query keyStr testStr setStr =
@@ -159,32 +156,36 @@ module Read_only (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
       let cluster = create_cluster hosts in   
       let response = connect_session sess cluster in 
       match response with 
-      | false -> (print_string "\nSession connection failed\n";
+      | false -> ((*print_string "\nSession connection failed\n";*)
                   ml_cass_cluster_free cluster;
                   ml_cass_session_free sess;
               let map = { t = sess} in
               (* Lwt.return sess *)
               Lwt.return map
           )
-      | true ->( print_string "\nSession is connected\n";
+      | true ->( (*print_string "\nSession is connected\n";*)
 				let map = { t = sess} in
               (* Lwt.return sess *)
               Lwt.return map)
 
   let close t =
-    (* t.t <- KMap.empty; *)
+  print_string "\nRO.close\n";
+    let future = ml_cass_session_close t.t in
+      ml_cass_future_wait future;
+
+      ignore @@ ml_cass_future_free future;
+
     Lwt.return_unit
-
-  let cast t = (t :> [ `Read | `Write ] t)
-
-  let batch t f = f (cast t)
 
   let pp_key = Irmin.Type.pp K.t
 
   let find { t; _ } key =
+  
     Log.debug (fun f -> f "find %a" pp_key key);
 
     let keyStr = Irmin.Type.to_string K.t key in
+
+    print_string ("\nRO.find: key = " ^ keyStr ^ "\n");
 
     let query = "select value from employee.table1 where key = '" ^ keyStr ^ "'" in
 
@@ -206,7 +207,7 @@ module Read_only (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
         let value = ml_cass_row_get_column row (cstub_convert 0) in  (*seg fault comes here*)
 
         let valStr = cstub_get_string value in 
-                (* print_string valStr; *)
+                print_string ("\nresult in aw_find is true. res = " ^ valStr ^ "\n");
 
         ml_cass_future_free future;
         ml_cass_statement_free statement;
@@ -233,12 +234,17 @@ module Read_only (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
   ) 
 
   let mem { t; _ } key =
+  print_string ("\nRO.mem: it will go to find fun now\n");
     Log.debug (fun f -> f "mem %a" pp_key key);
     let map = {t;} in
     find map key; >>= fun v ->
-      match v with 
-      | Some s -> Lwt.return true
-      | None -> Lwt.return false
+      (match v with 
+      | Some _ -> print_string "mem is true"; Lwt.return true
+      | None -> print_string "mem is false"; Lwt.return false)
+
+  let cast t = (t :> [ `Read | `Write ] t)
+
+  let batch t f = f (cast t)
 
 end
 
@@ -249,8 +255,10 @@ module Append_only (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
     Log.debug (fun f -> f "add -> %a" pp_key key);
     
     let keyStr = Irmin.Type.to_string K.t key in 
+    print_string ("\nAO.add: key = " ^ keyStr ^ "\n");
     let valStr = Irmin.Type.to_string V.t value in 
-    let query = "INSERT INTO employee.office (key, value) VALUES (?, ?)" in
+    print_string ("\nAO.add: value = " ^ valStr ^ "\n");
+    let query = "INSERT INTO employee.table1 (key, value) VALUES (?, ?)" in
 
       ignore @@ cx_stmt t.t query keyStr valStr;
     Lwt.return_unit
@@ -276,11 +284,87 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
 (* { t = sess} *)
   let v config = RO.v config >>= fun t -> Lwt.return { t; w = watches; lock }
 		(*equivalent of what is returned above is: {t = { t = sess}; w = watches; lock} *)
-  let close t = W.clear t.w >>= fun () -> RO.close t.t
+  let close t = print_string ("\nAW.close\n"); W.clear t.w >>= fun () -> RO.close t.t
 
-  let find t = RO.find t.t
+  (* let ml_aw_find_c t key = 
+      let keyStr = Irmin.Type.to_string K.t key in
 
-  let mem t = RO.mem t.t
+      print_string ("\nAW.aw_find: key = " ^ keyStr ^ "\n");
+
+      let query = "select value from employee.office where key = '" ^ keyStr ^ "'" in
+      let res_string = aw_find_c t query in
+      print_string ("this is what i am looking for: " ^ res_string);
+      Lwt.return_none *)
+
+  let aw_find t key = 
+    print_string "\ninside aw_find\n";
+    (* Log.debug (fun f -> f "find %a" pp_key key); *)
+
+    let keyStr = Irmin.Type.to_string K.t key in
+
+    print_string ("\nAW.aw_find: key = " ^ keyStr ^ "\n");
+
+    let query = "select value from employee.office where key = '" ^ keyStr ^ "'" in
+      
+    let statement = ml_cass_statement_new query (cstub_convert 0) in
+    let future = ml_cass_session_execute t statement in 
+      ml_cass_future_wait future;
+      
+
+    let rc = ml_cass_future_error_code future in 
+    (* let _ = ml_aw_find_c t key in  *)
+    let response = cstub_match_enum rc future in 
+
+    if response then (
+
+      let result = ml_cass_future_get_result future in
+      let rowcount = ml_cass_result_row_count result in
+      
+      if  (cstub_convert_to_ml rowcount) > 0 then (
+
+		    let row = ml_cass_result_first_row result in 
+        let value = ml_cass_row_get_column row (cstub_convert 0) in  (*seg fault comes here*)
+
+        let valStr = cstub_get_string value in 
+          print_string ("\nresult in aw_find is true. res = " ^ valStr ^ "\n"); 
+
+        ml_cass_future_free future;
+        ml_cass_statement_free statement;
+  
+        match (Irmin.Type.of_string V.t valStr) with 
+        | Ok s -> Lwt.return_some s
+        | _ ->  Lwt.return_none
+
+       )else(
+        print_string "\naw_find result = 0\n";
+
+        ml_cass_future_free future;
+        ml_cass_statement_free statement;      
+        
+        Lwt.return_none  
+      
+      );
+      
+    )else(
+      print_string "\nresponse in aw_find is false\n";
+
+      ml_cass_future_free future;
+      ml_cass_statement_free statement;
+
+      Lwt.return_none
+  )  
+
+  let find t = print_string ("\nAW.find: calling aw_find now\n"); aw_find t.t.t
+
+  let aw_mem t key =
+  print_string ("\nAW.aw_mem: it will go to AW.find now\n");
+    aw_find t key >>= fun v ->
+      (match v with 
+      | Some _ -> print_string "mem is true"; Lwt.return true
+      | None -> print_string "mem is false"; Lwt.return false)
+
+
+  let mem t = print_string ("\nAW.mem: calling RO.mem now\n"); (*RO.mem t.t*) aw_mem t.t.t 
 
   let watch_key t = W.watch_key t.w
 
@@ -300,10 +384,11 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
     |false -> [] 
 
   let list t =
+  print_string "\nAW.list: fetches the list of keys in office table\n";
     Log.debug (fun f -> f "list");
 
     let valCount = cstub_convert 0 in
-    let query = "select key from employee.table1" in
+    let query = "select key from employee.office" in
     let statement = ml_cass_statement_new query valCount in 
 
     let future = ml_cass_session_execute t.t.t statement in
@@ -337,10 +422,12 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
   let set t key value = 
 
     L.with_lock t.lock key (fun () ->
-    let query = "INSERT INTO employee.table1 (key, value) VALUES (?, ?)" in
+    let query = "INSERT INTO employee.office (key, value) VALUES (?, ?)" in
 
     let keyStr = Irmin.Type.to_string K.t key in 
+    print_string ("\nAW.set: key = " ^ keyStr ^ "\n");
     let valStr = Irmin.Type.to_string V.t value in 
+    print_string ("\nAW.set: value = " ^ valStr ^ "\n");
 
       ignore @@ cx_stmt t.t.t query keyStr valStr;
 
@@ -350,42 +437,78 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
     
     L.with_lock t.lock key (fun () ->
     let keyStr = Irmin.Type.to_string K.t key in
-    let query = "DELETE from employee.table1 WHERE key = ?" in
+    print_string ("\nAW.remove: key = " ^ keyStr ^ "\n");
+    let query = "DELETE from employee.office WHERE key = ?" in
     
       ignore @@ del_stmt t.t.t query keyStr;
 
     Lwt.return_unit) >>= fun () -> W.notify t.w key None
     
   let test_and_set t key ~test ~set = 
+    
     Log.debug (fun f -> f "test_and_set");
     
     L.with_lock t.lock key (fun () ->
 
     let keyStr = Irmin.Type.to_string K.t key in 
+    print_string ("\nAW.test_and_set: key = " ^ keyStr ^ "\n");
 
     let testStr = match test with 
       |Some v -> Irmin.Type.to_string V.t v
       |None -> ""  in
+    print_string ("\nAW.test_and_set: test = " ^ testStr ^ "\n");
 
     let setStr = match set with 
       |Some v -> Irmin.Type.to_string V.t v
       |None -> ""  in
+    print_string ("\nAW.test_and_set: set = " ^ setStr ^ "\n");
 
     let tns = match setStr with 
     | "" -> (
-          let query = "DELETE from employee.table1 WHERE key = ?" in
+          let query = "DELETE from employee.office WHERE key = ?" in
           let response = del_stmt t.t.t query keyStr in
 
           if response then Lwt.return true else Lwt.return false
 
       )
     | _ -> (  (*IF makes the transaction light weight*)
-          let query = "UPDATE employee.table1 SET value = ? WHERE key = ? IF value = ?" in
-          let response = tns_stmt t.t.t query keyStr testStr setStr in
+          if (testStr = "") then
+            (let query = "INSERT INTO employee.office (key, value) VALUES (?, ?)" in
+            ignore @@ cx_stmt t.t.t query keyStr setStr;
+            Lwt.return true)
+          else(
+            
+            (* aw_find t.t.t key >>= fun testVal ->
+            
+            let testValStr = match testVal with 
+            | Some v ->  Irmin.Type.to_string V.t v
+            | None -> ""  in
 
-          if response then Lwt.return true else Lwt.return false
+            if (testValStr = testStr) then 
+            (print_string ("testValStr = " ^ testValStr ^ "\n");
+            print_string ("testStr = " ^ testStr ^ "\n");
+            print_string ("setStr = " ^ setStr ^ "\n");
 
-      ) in
+              let query = "INSERT INTO employee.office (key, value) VALUES (?, ?)" in
+              ignore @@ cx_stmt t.t.t query keyStr setStr;
+                  (*  *)
+              aw_find t.t.t key >>= fun testVal ->
+            
+            let testValStr = match testVal with 
+            | Some v ->  Irmin.Type.to_string V.t v
+            | None -> ""  in
+
+            print_string ("ValStr = " ^ testValStr ^ "\n");
+              Lwt.return true)
+            else
+              Lwt.return false *)
+
+            let query = "UPDATE employee.office SET value = ? WHERE key = ? IF value = ?" in
+            let response = tns_stmt t.t.t query keyStr testStr setStr in
+
+            if response then Lwt.return true else Lwt.return false)
+            
+          ) in
 
     tns) >>= fun updated ->
     (if updated then W.notify t.w key set else Lwt.return_unit) >>= fun () ->
