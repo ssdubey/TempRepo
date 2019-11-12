@@ -228,6 +228,7 @@ Irmin KV eg
 #require "irmin-mem";;
 #require "checkseum.ocaml";;
 #require "irmin-unix";;
+#require "lwt.unix";;
 
 Creating a repo
 module Mem_kvStore = Irmin_mem.KV(Irmin.Contents.String);;      (*creating the module with the set of functions*)
