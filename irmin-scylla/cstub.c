@@ -47,72 +47,55 @@ CAMLprim value match_enum(value rc, value future){
   }
  }
 
+// CAMLprim value get_string_null(value val, value buf){
+  
+//   CAMLparam2(val, buf);
+//   const char* text = "sample data";
+//   printf("\ntext value in c: %s", text);
+
+//   printf("\nbuffer data in c: %s", String_val(buf));
+//   memcpy((char*)Caml_ba_data_val(buf), text, (long)12);
+  
+//   // char t[13] = "data sample";
+//   // memcpy(t, text, 12);
+
+//   printf("\ntext value in c: %s", text);
+//   // printf("\nbuffer value in c: %S", Caml_ba_data_val(buf));
+
+//   CAMLreturn (Val_unit);
+// }
+
+//TRIAL 1
 
 CAMLprim value get_string_length(value val)
 {
   CAMLparam1(val);
-  const char* text;
+  //const char* text;
+  const cass_byte_t* text;
   size_t text_length;
   
-  cass_value_get_string((const CassValue*)val, &text, &text_length);
+  cass_value_get_bytes((const CassValue*)val, &text, &text_length);
   int length = (int) text_length;
+  
   CAMLreturn(Val_int(length));
 }
 
 CAMLprim value get_string_null(value val, value buf){
   
   CAMLparam2(val, buf);
-  const char* text = "sample data";
-  printf("\ntext value in c: %s", text);
-
-  memcpy((char*)Caml_ba_data_val(buf), text, (long)12);
+  //const char* text;
+  const cass_byte_t* text;
+  size_t text_length;
   
-  printf("\ntext value in c: %s", text);
-  printf("\nbuffer value in c: %s", buf);
-
+  cass_value_get_bytes((const CassValue*)val, &text, &text_length);
+//  cass_statement_bind_bytes
+  int length = (int) text_length;
+  // printf("\nin c : length of string obtained from c*: %d", length);
+  
+  memcpy((char*)Caml_ba_data_val(buf), text, (long)length);
+  
   CAMLreturn (Val_unit);
 }
-
-//TRIAL 1
-
-
-// CAMLprim value get_string_null(value val, value buf){
-  
-//   CAMLparam2(val, buf);
-//   //CAMLlocal1(byt);
-//   const char* text = "sample data";
-//   size_t text_length;
-  
-//  // cass_value_get_string((const CassValue*)val, &text, &text_length);
-
-
-//   int length = (int) text_length;
-//   int c = 0;
-
-//   char sub [length];
-  
-//   while (c < length) {
-//       sub[c] = text[c];
-//       c++;
-//   }
-
-//   memcpy((char*)Caml_ba_data_val(buf), sub, (long)12);
-//   printf("\ntext value in c: %s", text);
-//   printf("\nbuffer value in c: %s", buf);
-
-//   printf("\nin c 4");
-//   // CAMLreturn(Bytes_val(buf));
-//   CAMLreturn (Val_unit);
-// }
-
-// caml_blit_string_to_bigstring(value val_buf1, value val_ofs1, value val_buf2, value val_ofs2, value val_len)
-// {
-//   memcpy((char*)Caml_ba_data_val(val_buf2) + Long_val(val_ofs2),
-//          String_val(val_buf1) + Long_val(val_ofs1),
-//          Long_val(val_len));
-//   return Val_unit;
-// }
-
 
  CAMLprim value get_string(value val){
   
@@ -124,10 +107,10 @@ CAMLprim value get_string_null(value val, value buf){
   
   cass_value_get_string((const CassValue*)val, &text, &text_length);
   //cass_value_get_bytes((const CassValue*)val, &text, &text_length);
-  printf("\nget string in c: %s\n", text);
+  // printf("\nget string in c: %s\n", text);
   int c = 0;
   int length = (int)text_length;
-  printf("\nlength found in c = %d", length);
+  // printf("\nlength found in c = %d", length);
   char sub [length];
   
   while (c < length) {
@@ -137,8 +120,8 @@ CAMLprim value get_string_null(value val, value buf){
   sub[c] = '\0';
     
   var_value = caml_copy_string(sub);
-  printf("\nvar_value in c = %s\n", var_value);
-  printf ("done in c");
+  // printf("\nvar_value in c = %s\n", var_value);
+  // printf ("done in c");
   CAMLreturn(var_value);
   //CAMLreturn(sub);
  }
@@ -154,7 +137,7 @@ CAMLprim value get_string_null(value val, value buf){
     //printf("length of item = %d", i);
     cass_statement_bind_string(statement, ind, Field(item,0));
 //	cass_statement_bind_bytes(statement, ind, Field(item,0), size); //segmentation fault for more than 1000000
-	printf("\nvalue = %s", Field(item,0));
+	// printf("\nvalue = %s", Field(item,0));
 	//printf("\nvalue = %s -- size of value in c = %d", Field(item,0), caml_string_length(Field(item,0)));
 	
 /*	switch (Tag_val(v))

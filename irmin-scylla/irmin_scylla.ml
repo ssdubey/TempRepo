@@ -110,17 +110,17 @@ external cstub_experiment : string -> string = "experiment"
 
 external cstub_get_string_length : cassValue -> int = "get_string_length"
 
-external cstub_get_string_null : cassValue -> Buffer.t -> Buffer.t = "get_string_null"
+external cstub_get_string_null : cassValue -> (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t -> unit = "get_string_null"
 
 external cstub_cass_statement_bind_bytes : cassStatement -> int -> 'a cassByte -> int -> unit
   = "param_variant"
 
-let printlog msg = 
+
+(* let printlog msg = 
   Printf.printf "\n%s" msg
 
 let printtime msg time = 
-  print_string "\n" ; print_string msg ; print_float time ; print_string "\n"
-  (* print_float time; print_string "\n"  *)
+  print_string "\n" ; print_string msg ; print_float time ; print_string "\n" *)
 
 let get_error_code future statement =
   let rc = ml_cass_future_error_code future in
@@ -225,7 +225,7 @@ module Read_only (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
 
   let v _config =
     let sess = ml_cass_session_new () in
-    (* let hosts = "172.17.0.2" in *)
+    
     let hosts = (match Irmin.Private.Conf.get _config Irmin.Private.Conf.root with
       | Some ip -> ip 
       | None -> "") in
@@ -244,15 +244,11 @@ module Read_only (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
         Lwt.return map
 
   let close t =
-    (* let future = ml_cass_session_close t.t in
-    ml_cass_future_wait future; *)
-
     let stime = Unix.gettimeofday() in
     let future = ml_cass_session_close t.t in
     let etime = Unix.gettimeofday() in
       ml_cass_future_wait future;
     let ttime = Unix.gettimeofday() in  
-    (* let wofuture = etime -. stime in  *)
     let wfuture = ttime -. stime in
   
     ignore @@ ml_cass_future_free future;
@@ -263,10 +259,10 @@ module Read_only (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
 
   let find { t; _ } key =
     Log.debug (fun f -> f "find %a" pp_key key);
-    printlog "\ninside AO.find ";
+    
 let stime = Unix.gettimeofday () in 
     let keyStr = Irmin.Type.to_string K.t key in
-let etime = Unix.gettimeofday () in
+(* let etime = Unix.gettimeofday () in *)
     
     let query =
       "select value from irmin_scylla.append_only where key = '" ^ keyStr ^ "'"
@@ -291,29 +287,45 @@ let etime = Unix.gettimeofday () in
         let value = ml_cass_row_get_column row (cstub_convert 0) in
        
         let valStr_length = cstub_get_string_length value in
-        Printf.printf "\n*******valStr_length: %d" valStr_length;
-
-        (* let buf = Buffer.create valStr_length in  *)
-        let buf = Buffer.create 12 in 
-        cstub_get_string_null value buf;
+                
+        let buf = Bigarray.Array1.create Bigarray.Char Bigarray.c_layout valStr_length in
+          cstub_get_string_null value buf;
         
-        let content = Buffer.contents buf in 
-        Printf.printf "\ncontent of buffer: %s" content;
+        let contentBytes = Bytes.create valStr_length in 
 
-        let valStr = cstub_get_string value in
-          Printf.printf "\n\nAO.find from_cstub_valstr : %S\nAO.find length = %d" valStr (String.length valStr);
+
+        for i=0 to (valStr_length-1) do 
+          let content = Bigarray.Array1.get buf i in
+          Bytes.set contentBytes i content;
+        done;
+(* let etime = Unix.gettimeofday() in
+    let diff = etime -. stime in *)
+    (* print_string "\n";print_float (diff *. 10000000.); *)
+
+        let contentStr = Bytes.to_string contentBytes in 
+       
         ml_cass_future_free future;
         ml_cass_statement_free statement;
 
     
-        let item = Irmin.Type.of_bin_string V.t valStr in 
-        (* let item = Irmin.Type.of_string V.t valStr in  *)
-        print_string "\nitem found ";
+        let item = Irmin.Type.of_bin_string V.t contentStr in 
         match item with
-        | Ok s ->  print_string "\nok";
-                  Lwt.return_some s
-        | Error (`Msg e) -> print_string ("\nnot ok: "^e); Lwt.return_none )
+        | Ok s ->  Lwt.return_some s
+        | Error (`Msg e) -> print_string ("\nIrmin.Type.of_bin_string parsing error: Irmin_scylla:313: "^e); 
+
+        let dtime = Unix.gettimeofday() in 
+
+    let diff = dtime -. stime in
+    (* print_string "\n";print_float (diff *. 10000000.); *)
+
+                          Lwt.return_none )
       else ( 
+
+        let dtime = Unix.gettimeofday() in 
+
+    let diff = dtime -. stime in
+    (* print_string "\n";print_float (diff *. 10000000.); *)
+
         ml_cass_future_free future;
         ml_cass_statement_free statement;
 
@@ -322,11 +334,16 @@ let etime = Unix.gettimeofday () in
       ml_cass_future_free future;
       ml_cass_statement_free statement;
 
+let dtime = Unix.gettimeofday() in 
+
+let diff = dtime -. stime in
+    (* print_string "\n";print_float (diff *. 10000000.); *)
+
       Lwt.return_none )
 
   let mem { t; _ } key =
     Log.debug (fun f -> f "mem %a" pp_key key);
-    printlog "AO.mem";
+    
     (let map = { t } in
      find map key)
     >>= fun v ->
@@ -341,36 +358,33 @@ module Append_only (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
   include Read_only (K) (V)
 
   let add t key value = 
-  (* let stime = Unix.gettimeofday () in *)
+  
     Log.debug (fun f -> f "add -> %a" pp_key key);
-    printlog "AO.add";
-    let stime = Unix.gettimeofday() in
+    
+  let stime = Unix.gettimeofday() in
     let keyStr = Irmin.Type.to_string K.t key in
     let valStr = Irmin.Type.to_bin_string V.t value in
 
-
-    Printf.printf "\n\nAO.add to_bin_string_value : %S\nAO.add length = %d" valStr (String.length valStr);
-    
     let query = "INSERT INTO irmin_scylla.append_only (key, value) VALUES (?, ?)" in
- let dtime = Unix.gettimeofday() in 
-
     
-(*-------------------------------------------------------------------------------*)
+
     let valCount = cstub_convert 2 in
     let statement = ml_cass_statement_new query valCount in
     
-    let item = Input value in 
-
+    let bytstr = Bytes.of_string valStr in 
+    let bytstrlen = Bytes.length bytstr in 
     
     ml_cass_statement_bind_string statement (cstub_convert 0) keyStr;
-    ml_cass_statement_bind_string statement (cstub_convert 1) valStr;
+    ml_cass_statement_bind_bytes statement (cstub_convert 1) bytstr (cstub_convert bytstrlen);
    
-    
     let future = ml_cass_session_execute t.t statement in
     ml_cass_future_wait future;
 
     get_error_code future statement;
+    (* let dtime = Unix.gettimeofday() in 
 
+let diff = dtime -. stime in
+    print_string "\n";print_float (diff *. 10000000.); *)
 
     Lwt.return_unit
 end
@@ -440,14 +454,20 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
 
       Lwt.return_none )
 
-  let find t = printlog "AW.find"; aw_find t.t.t
+  let find t = 
+  let stime = Unix.gettimeofday () in
+  let x = aw_find t.t.t in
+  let etime = Unix.gettimeofday () in
+        let diff = etime -. stime in
+        print_string "\n"; print_float (diff*.10000000.);
+      x
 
   let aw_mem t key =
   
     aw_find t key >>= fun v ->
     match v with Some _ -> Lwt.return true | None -> Lwt.return false
 
-  let mem t = printlog "AW.mem"; aw_mem t.t.t
+  let mem t = aw_mem t.t.t
 
   let watch_key t =
     ignore t;
@@ -474,7 +494,6 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
 
   let list t =
     Log.debug (fun f -> f "list");
-    printlog "AW.list";
     let valCount = cstub_convert 0 in
     let query = "select key from irmin_scylla.atomic_write" in
     let statement = ml_cass_statement_new query valCount in
@@ -498,7 +517,6 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
     else Lwt.return []
 
   let set t key value = 
-  printlog "AW.set";
   let stime = Unix.gettimeofday () in
     L.with_lock t.lock key (fun () ->
         let query = "INSERT INTO irmin_scylla.atomic_write (key, value) VALUES (?, ?)" in
@@ -507,11 +525,11 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
         ignore @@ cx_stmt t.t.t query keyStr valStr;
     let etime = Unix.gettimeofday () in
     let diff = etime -. stime in
-    print_string "\nset time "; print_float diff;
+    print_string "\nset"; print_float diff;
         Lwt.return_unit)
 
   let remove t key =
-  printlog "AW.remove";
+  
   let stime = Unix.gettimeofday () in
     L.with_lock t.lock key (fun () ->
         let keyStr = Irmin.Type.to_string K.t key in
@@ -519,12 +537,11 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Type.S) = struct
         ignore @@ del_stmt t.t.t query keyStr;
     let etime = Unix.gettimeofday () in
     let diff = etime -. stime in
-    print_string "\nremove time "; print_float diff;
-
+    
         Lwt.return_unit)
 
   let test_and_set t key ~test ~set =
-  printlog "AW.test_and_set";
+  
   let stime = Unix.gettimeofday () in
     Log.debug (fun f -> f "test_and_set");
 
